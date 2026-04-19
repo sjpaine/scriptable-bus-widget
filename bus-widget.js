@@ -1,8 +1,26 @@
 // Bus Widget for Scriptable
 // Displays real-time bus departures from NDOV Loket via OV API
-// Version: 1.2.0 (2026-04-19)
-// Configuration: config.json in Scriptable documents directory
-// Configuration: config.json in Scriptable documents directory
+// Version: 1.3.0 (2026-04-19)
+// Configuration: config.json in Scriptable documents directory (optional - defaults embedded)
+
+const DEFAULTS = {
+    stopId: "51200124",
+    stopName: "De Meern, Veldhuizen",
+    linesToShow: ["28", "29", "102"],
+    maxDepartures: 5,
+    refreshIntervalMinutes: 2,
+    apiEndpoint: "http://v0.ovapi.nl/tpc/",
+    styling: {
+        backgroundColor: "#FFFFFF",
+        primaryColor: "#FFE600",
+        textColor: "#000000",
+        errorColor: "#FF0000"
+    },
+    cache: {
+        enabled: true,
+        maxAgeMinutes: 10
+    }
+};
 
 const busConfig = loadConfiguration();
 const fetchTime = new Date();
@@ -21,37 +39,40 @@ Script.complete();
 // ============================================================================
 
 function loadConfiguration() {
-    try {
-        const fm = FileManager.iCloud();
-        const configPath = fm.joinPath(fm.documentsDirectory(), "config.json");
-        
-        if (!fm.fileExists(configPath)) {
-            throw new Error("config.json not found");
+    const fm = FileManager.iCloud();
+    const configPath = fm.joinPath(fm.documentsDirectory(), "config.json");
+    
+    let configData = DEFAULTS;
+    
+    if (fm.fileExists(configPath)) {
+        try {
+            const userConfig = JSON.parse(fm.readString(configPath));
+            configData = { ...DEFAULTS, ...userConfig };
+            
+            if (userConfig.styling) {
+                configData.styling = { ...DEFAULTS.styling, ...userConfig.styling };
+            }
+            if (userConfig.cache) {
+                configData.cache = { ...DEFAULTS.cache, ...userConfig.cache };
+            }
+        } catch (error) {
+            log("Config parse error, using defaults: " + error.message);
         }
-        
-        const configData = JSON.parse(fm.readString(configPath));
-        
-        return {
-            stopId: configData.stopId,
-            stopName: configData.stopName,
-            linesToShow: configData.linesToShow || [],
-            maxDepartures: configData.maxDepartures || 3,
-            refreshIntervalMinutes: configData.refreshIntervalMinutes || 2,
-            apiEndpoint: configData.apiEndpoint,
-            styling: configData.styling,
-            cache: configData.cache,
-            runsInWidget: config.runsInWidgetContext
-        };
-    } catch (error) {
-        const widget = new ListWidget();
-        widget.backgroundColor = Color.white();
-        const text = widget.addText("Config error: " + error.message);
-        text.font = Font.systemFont(12);
-        text.textColor = Color.red();
-        Script.setWidget(widget);
-        Script.complete();
-        throw error;
+    } else {
+        log("No config.json found, using embedded defaults");
     }
+    
+    return {
+        stopId: configData.stopId,
+        stopName: configData.stopName,
+        linesToShow: configData.linesToShow || [],
+        maxDepartures: configData.maxDepartures || 3,
+        refreshIntervalMinutes: configData.refreshIntervalMinutes || 2,
+        apiEndpoint: configData.apiEndpoint,
+        styling: configData.styling,
+        cache: configData.cache,
+        runsInWidget: config.runsInWidgetContext
+    };
 }
 
 // ============================================================================
@@ -100,7 +121,9 @@ function processPasses(passes) {
             continue;
         }
         
-        const expectedTime = parseApiTimestamp(pass.ExpectedArrivalTime);
+        const expectedTime = pass.ExpectedArrivalTime 
+            ? parseApiTimestamp(pass.ExpectedArrivalTime)
+            : parseApiTimestamp(pass.TargetArrivalTime);
         const targetTime = parseApiTimestamp(pass.TargetArrivalTime);
         const delayMs = expectedTime.getTime() - targetTime.getTime();
         const delayMinutes = Math.round(delayMs / 60000);
@@ -272,16 +295,9 @@ function createWidget(departures) {
         // Time
         const eta = calculateETA(dep.expectedTime);
         
-        // Departure time first
         const etaText = rowStack.addText(eta);
         etaText.font = Font.boldSystemFont(12);
         etaText.textColor = new Color(busConfig.styling.textColor);
-        
-        if (dep.delay > 1) {
-            const delayText = rowStack.addText(" +" + dep.delay);
-            delayText.font = Font.systemFont(9);
-            delayText.textColor = new Color(busConfig.styling.errorColor);
-        }
         
         widget.addSpacer(4);
     }
@@ -300,9 +316,13 @@ function calculateETA(arrival) {
     const diffMs = arrival.getTime() - now.getTime();
     const diffMinutes = Math.round(diffMs / 60000);
     
-    if (diffMinutes < 0) return "Dep.";
-    if (diffMinutes < 1) return "Now";
-    return diffMinutes + " min";
+    const hours = arrival.getHours().toString().padStart(2, "0");
+    const minutes = arrival.getMinutes().toString().padStart(2, "0");
+    const timeStr = hours + ":" + minutes;
+    
+    if (diffMinutes < 0) return "Dep. (" + timeStr + ")";
+    if (diffMinutes < 1) return "Now (" + timeStr + ")";
+    return diffMinutes + " min (" + timeStr + ")";
 }
 
 function truncateString(str, maxLength) {

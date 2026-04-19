@@ -1,7 +1,7 @@
 #!/bin/bash
 # Deploy script for Bus Widget to iCloud Scriptable directory
 
-SCRIPTABLE_DIR="/Users/seanpaine/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents"
+SCRIPTABLE_DIR="$HOME/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents"
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Deploying Bus Widget to iCloud Scriptable..."
