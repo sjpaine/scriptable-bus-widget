@@ -15,24 +15,27 @@ A native iOS widget that displays real-time bus departures from Dutch public tra
 - [Scriptable](https://scriptable.app/) app for iOS
 - iOS 14+ for widget support
 
-## Quick Start
+## Quick Start (on Mac)
 
 1. Install Scriptable from the App Store
-2. Clone this repository:
+2. Clone this repository on your Mac:
    ```bash
    git clone https://github.com/sjpaine/scriptable-bus-widget.git
    cd scriptable-bus-widget
    ```
-3. Run the setup script:
+3. Find your bus stop ID at [OVZoeker.nl](https://ovzoeker.nl/):
+   - Search for your stop (e.g., "Utrecht Centraal")
+   - Note the 7-8 digit code (TPC number)
+4. Run the setup script:
    ```bash
    ./quickstart.sh
    ```
-4. Enter your bus stop ID and name when prompted
-5. Deploy:
+5. Enter your bus stop ID and name when prompted
+6. Deploy:
    ```bash
    ./deploy.sh
    ```
-6. Add the widget to your home screen:
+7. Add the widget to your home screen on iPhone:
    - Long-press home screen → "+" icon
    - Search "Scriptable"
    - Choose widget size
@@ -41,8 +44,10 @@ A native iOS widget that displays real-time bus departures from Dutch public tra
 ## Finding Your Stop ID
 
 1. Go to [OVZoeker.nl](https://ovzoeker.nl/)
-2. Search for your stop
-3. Copy the 7-8 digit code (TPC)
+2. Search for your stop (e.g., "Veldhuizen" or "Utrecht Centraal")
+3. Click on the correct stop in the results
+4. Look for the "TPC" or "Timing Point Code" - it's a 7-8 digit number (like `50000001` or `51200124`)
+5. Copy this number for use in the quickstart script
 
 ## Manual Configuration
 
