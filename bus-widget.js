@@ -1,7 +1,8 @@
 // Bus Widget for Scriptable
 // Displays real-time bus departures from NDOV Loket via OV API
+// Version: 1.1.5 (2026-04-19)
 // Configuration: config.json in Scriptable documents directory
-// Version: 1.1.0 (2026-04-19)
+// Version: 1.1.5 (2026-04-19)
 
 const busConfig = loadConfiguration();
 const fetchTime = new Date();
@@ -187,24 +188,28 @@ function createWidget(departures) {
     const widget = new ListWidget();
     
     widget.backgroundColor = new Color(busConfig.styling.backgroundColor);
-    widget.setPadding(12, 12, 12, 12);
+    widget.setPadding(8, 10, 8, 10);
     
     const isOffline = departures.expired || (departures.data && departures.age);
     const cacheAge = departures.age;
     const displayData = departures.data || departures;
     
-    // Header
+    // Header - stop name left, time right
     const headerStack = widget.addStack();
     headerStack.layoutHorizontally();
-    headerStack.addText(busConfig.stopName).font = Font.boldSystemFont(14);
-    headerStack.addText(" ");
     
-    const timeText = isOffline && cacheAge ? "Cached " + cacheAge + "m" : formatTime(fetchTime);
+    const nameText = headerStack.addText(busConfig.stopName);
+    nameText.font = Font.boldSystemFont(12);
+    nameText.textColor = new Color(busConfig.styling.textColor);
+    
+    headerStack.addSpacer();
+    
+    const timeText = isOffline && cacheAge ? "Cache " + cacheAge + "m" : formatTime(fetchTime);
     const timeLabel = headerStack.addText(timeText);
-    timeLabel.font = Font.systemFont(10);
+    timeLabel.font = Font.systemFont(9);
     timeLabel.textColor = new Color(busConfig.styling.textColor, 0.5);
     
-    widget.addSpacer(8);
+    widget.addSpacer(4);
     
     // Error states
     if (displayData.length === 0) {
@@ -232,30 +237,45 @@ function createWidget(departures) {
         widget.addSpacer(4);
     }
     
-    // Departures
+    // Departures - compact list
     for (const dep of displayData) {
         const rowStack = widget.addStack();
         rowStack.layoutHorizontally();
-        const dotText = rowStack.addText("●");
-        dotText.font = Font.systemFont(8);
-        dotText.textColor = new Color(busConfig.styling.primaryColor);
+        rowStack.setPadding(2, 0, 2, 0);
         
-        const lineText = rowStack.addText(" " + dep.line);
-        lineText.font = Font.boldSystemFont(16);
-        lineText.textColor = new Color(busConfig.styling.textColor);
+        // Line number box (small yellow badge)
+        const lineBox = rowStack.addStack();
+        lineBox.backgroundColor = new Color(busConfig.styling.primaryColor);
+        lineBox.cornerRadius = 3;
+        lineBox.size = new Size(24, 20);
+        lineBox.centerAlignContent();
         
-        const destStack = widget.addStack();
-        destStack.layoutHorizontally();
+        const lineText = lineBox.addText(dep.line);
+        lineText.font = Font.boldSystemFont(11);
+        lineText.textColor = Color.black();
         
-        const destText = destStack.addText(truncateString(dep.destination, 20));
-        destText.font = Font.systemFont(12);
+        rowStack.addSpacer(6);
+        
+        // Destination (takes remaining space)
+        const destText = rowStack.addText(truncateString(dep.destination, 18));
+        destText.font = Font.systemFont(11);
         destText.textColor = new Color(busConfig.styling.textColor);
         
-        destStack.addSpacer();
+        // Time right-aligned at end
+        const timeStack = rowStack.addStack();
+        timeStack.layoutHorizontally();
         
         const eta = calculateETA(dep.expectedTime);
-        const etaText = destStack.addText(eta);
-        etaText.font = Font.boldSystemFont(14);
+        
+        if (dep.delay > 1) {
+            const delayText = timeStack.addText("+" + dep.delay);
+            delayText.font = Font.systemFont(9);
+            delayText.textColor = new Color(busConfig.styling.errorColor);
+            timeStack.addSpacer(2);
+        }
+        
+        const etaText = timeStack.addText(eta);
+        etaText.font = Font.boldSystemFont(12);
         
         if (dep.delay > 1) {
             etaText.textColor = new Color(busConfig.styling.errorColor);
@@ -263,14 +283,7 @@ function createWidget(departures) {
             etaText.textColor = new Color(busConfig.styling.textColor);
         }
         
-        widget.addSpacer(4);
-        
-        if (dep.delay > 1) {
-            const delayText = widget.addText("+" + dep.delay + " min");
-            delayText.font = Font.systemFont(10);
-            delayText.textColor = new Color(busConfig.styling.errorColor);
-            widget.addSpacer(4);
-        }
+        widget.addSpacer(2);
     }
     
     widget.refreshAfterDate = new Date(Date.now() + busConfig.refreshIntervalMinutes * 60 * 1000);
