@@ -1,8 +1,8 @@
 // Bus Widget for Scriptable
 // Displays real-time bus departures from NDOV Loket via OV API
-// Version: 1.1.5 (2026-04-19)
+// Version: 1.2.0 (2026-04-19)
 // Configuration: config.json in Scriptable documents directory
-// Version: 1.1.5 (2026-04-19)
+// Configuration: config.json in Scriptable documents directory
 
 const busConfig = loadConfiguration();
 const fetchTime = new Date();
@@ -168,11 +168,18 @@ function getCachedDepartures() {
         const cacheData = JSON.parse(fm.readString(cachePath));
         const cacheAgeMinutes = (Date.now() - new Date(cacheData.timestamp).getTime()) / 60000;
         
+        // Reconstruct Date objects from ISO strings
+        const reconstructedDepartures = cacheData.departures.map(dep => ({
+            ...dep,
+            expectedTime: parseApiTimestamp(dep.expectedArrivalISO),
+            targetTime: parseApiTimestamp(dep.targetArrivalISO)
+        }));
+        
         if (cacheAgeMinutes > busConfig.cache.maxAgeMinutes) {
-            return { expired: true, data: cacheData.departures, age: Math.round(cacheAgeMinutes) };
+            return { expired: true, data: reconstructedDepartures, age: Math.round(cacheAgeMinutes) };
         }
         
-        return { data: cacheData.departures, age: Math.round(cacheAgeMinutes) };
+        return { data: reconstructedDepartures, age: Math.round(cacheAgeMinutes) };
         
     } catch (error) {
         log("Cache read error: " + error.message);
@@ -237,11 +244,10 @@ function createWidget(departures) {
         widget.addSpacer(4);
     }
     
-    // Departures - compact list
+    // Departures - simple list
     for (const dep of displayData) {
         const rowStack = widget.addStack();
         rowStack.layoutHorizontally();
-        rowStack.setPadding(2, 0, 2, 0);
         
         // Line number box (small yellow badge)
         const lineBox = rowStack.addStack();
@@ -256,34 +262,28 @@ function createWidget(departures) {
         
         rowStack.addSpacer(6);
         
-        // Destination (takes remaining space)
-        const destText = rowStack.addText(truncateString(dep.destination, 18));
+        // Destination
+        const destText = rowStack.addText(dep.destination);
         destText.font = Font.systemFont(11);
         destText.textColor = new Color(busConfig.styling.textColor);
         
-        // Time right-aligned at end
-        const timeStack = rowStack.addStack();
-        timeStack.layoutHorizontally();
+        rowStack.addSpacer();
         
+        // Time
         const eta = calculateETA(dep.expectedTime);
         
+        // Departure time first
+        const etaText = rowStack.addText(eta);
+        etaText.font = Font.boldSystemFont(12);
+        etaText.textColor = new Color(busConfig.styling.textColor);
+        
         if (dep.delay > 1) {
-            const delayText = timeStack.addText("+" + dep.delay);
+            const delayText = rowStack.addText(" +" + dep.delay);
             delayText.font = Font.systemFont(9);
             delayText.textColor = new Color(busConfig.styling.errorColor);
-            timeStack.addSpacer(2);
         }
         
-        const etaText = timeStack.addText(eta);
-        etaText.font = Font.boldSystemFont(12);
-        
-        if (dep.delay > 1) {
-            etaText.textColor = new Color(busConfig.styling.errorColor);
-        } else {
-            etaText.textColor = new Color(busConfig.styling.textColor);
-        }
-        
-        widget.addSpacer(2);
+        widget.addSpacer(4);
     }
     
     widget.refreshAfterDate = new Date(Date.now() + busConfig.refreshIntervalMinutes * 60 * 1000);
@@ -309,6 +309,10 @@ function truncateString(str, maxLength) {
     if (!str) return "";
     if (str.length <= maxLength) return str;
     return str.substring(0, maxLength - 3) + "...";
+}
+
+function padDestination(str, maxLen) {
+    return str ? str.padEnd(maxLen) : "";
 }
 
 function formatTime(date) {
