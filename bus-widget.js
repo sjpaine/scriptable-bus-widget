@@ -1,13 +1,35 @@
-// Bus Widget for Scriptable
+// Bus Widget for Scriptable - Multi-Stop Edition
 // Displays real-time bus departures from NDOV Loket via OV API
-// Version: 1.3.0 (2026-04-19)
-// Configuration: config.json in Scriptable documents directory (optional - defaults embedded)
+// Version: 2.0.0 (2026-04-19)
+// 
+// USAGE:
+// - Add widget to home screen
+// - Edit widget → Parameter field → enter: "veldhuizen" or "utrecht"
+// - No parameter = defaults to veldhuizen
+//
+// TO ADD MORE STOPS: Edit the STOPS object below
 
-const DEFAULTS = {
-    stopId: "51200124",
-    stopName: "De Meern, Veldhuizen",
-    linesToShow: ["28", "29", "102"],
-    maxDepartures: 5,
+// ============================================================================
+// STOP CONFIGURATIONS - Add your stops here
+// ============================================================================
+
+const STOPS = {
+    veldhuizen: {
+        stopId: "51200124",
+        stopName: "Veldhuizen",
+        linesToShow: ["28","102","29"],
+        maxDepartures: 5
+    },
+    utrecht: {
+        stopId: "50000204",
+        stopName: "Utrecht CS",
+        linesToShow: ["28"],
+        maxDepartures: 5
+    }
+};
+
+// Global settings (apply to all stops)
+const GLOBAL_CONFIG = {
     refreshIntervalMinutes: 2,
     apiEndpoint: "http://v0.ovapi.nl/tpc/",
     styling: {
@@ -22,7 +44,18 @@ const DEFAULTS = {
     }
 };
 
-const busConfig = loadConfiguration();
+const LINE_COLORS = {
+    "28": "#FFE600",
+    "29": "#FF8C00",
+    "102": "#00CF00"
+};
+
+// ============================================================================
+// MAIN EXECUTION
+// ============================================================================
+
+const stopKey = args.widgetParameter || "veldhuizen";
+const busConfig = loadConfiguration(stopKey);
 const fetchTime = new Date();
 const departures = await fetchDepartures();
 const widget = createWidget(departures);
@@ -38,40 +71,31 @@ Script.complete();
 // CONFIGURATION
 // ============================================================================
 
-function loadConfiguration() {
-    const fm = FileManager.iCloud();
-    const configPath = fm.joinPath(fm.documentsDirectory(), "config.json");
+function loadConfiguration(stopKey) {
+    const stopConfig = STOPS[stopKey];
     
-    let configData = DEFAULTS;
-    
-    if (fm.fileExists(configPath)) {
-        try {
-            const userConfig = JSON.parse(fm.readString(configPath));
-            configData = { ...DEFAULTS, ...userConfig };
-            
-            if (userConfig.styling) {
-                configData.styling = { ...DEFAULTS.styling, ...userConfig.styling };
-            }
-            if (userConfig.cache) {
-                configData.cache = { ...DEFAULTS.cache, ...userConfig.cache };
-            }
-        } catch (error) {
-            log("Config parse error, using defaults: " + error.message);
-        }
-    } else {
-        log("No config.json found, using embedded defaults");
+    if (!stopConfig) {
+        const widget = new ListWidget();
+        widget.backgroundColor = Color.white();
+        const text = widget.addText(`Unknown stop: "${stopKey}"\n\nAvailable stops:\n${Object.keys(STOPS).join(', ')}`);
+        text.font = Font.systemFont(11);
+        text.textColor = Color.red();
+        Script.setWidget(widget);
+        Script.complete();
+        throw new Error("Unknown stop key: " + stopKey);
     }
     
     return {
-        stopId: configData.stopId,
-        stopName: configData.stopName,
-        linesToShow: configData.linesToShow || [],
-        maxDepartures: configData.maxDepartures || 3,
-        refreshIntervalMinutes: configData.refreshIntervalMinutes || 2,
-        apiEndpoint: configData.apiEndpoint,
-        styling: configData.styling,
-        cache: configData.cache,
-        runsInWidget: config.runsInWidgetContext
+        stopKey: stopKey,
+        stopId: stopConfig.stopId,
+        stopName: stopConfig.stopName,
+        linesToShow: stopConfig.linesToShow || [],
+        maxDepartures: stopConfig.maxDepartures || 5,
+        refreshIntervalMinutes: GLOBAL_CONFIG.refreshIntervalMinutes,
+        apiEndpoint: GLOBAL_CONFIG.apiEndpoint,
+        styling: GLOBAL_CONFIG.styling,
+        cache: GLOBAL_CONFIG.cache,
+        runsInWidget: config.runsInWidget
     };
 }
 
@@ -89,7 +113,6 @@ async function fetchDepartures() {
         
         if (!response || !response[busConfig.stopId]) {
             log("No data in API response");
-            saveCache(null);
             return getCachedDepartures();
         }
         
@@ -128,10 +151,13 @@ function processPasses(passes) {
         const delayMs = expectedTime.getTime() - targetTime.getTime();
         const delayMinutes = Math.round(delayMs / 60000);
         
+        const lineColor = extractLineColor(pass);
+        
         result.push({
             line: pass.LinePublicNumber,
+            lineColor: lineColor,
             destination: truncateString(pass.DestinationName50, 20),
-            expectedArrivalISO: pass.ExpectedArrivalTime,
+            expectedArrivalISO: pass.ExpectedArrivalTime || pass.TargetArrivalTime,
             targetArrivalISO: pass.TargetArrivalTime,
             expectedTime: expectedTime,
             delay: delayMinutes,
@@ -144,13 +170,21 @@ function processPasses(passes) {
     return result.slice(0, busConfig.maxDepartures);
 }
 
+function extractLineColor(pass) {
+    const lineNum = pass.LinePublicNumber;
+    if (lineNum && LINE_COLORS[lineNum]) {
+        return LINE_COLORS[lineNum];
+    }
+    return busConfig.styling.primaryColor;
+}
+
 // ============================================================================
 // CACHE MANAGEMENT
 // ============================================================================
 
 function getCachePath() {
     const fm = FileManager.iCloud();
-    return fm.joinPath(fm.documentsDirectory(), "bus-widget-cache.json");
+    return fm.joinPath(fm.documentsDirectory(), `bus-widget-cache-${busConfig.stopKey}.json`);
 }
 
 function saveCache(departures) {
@@ -163,8 +197,10 @@ function saveCache(departures) {
         const cacheData = {
             timestamp: new Date().toISOString(),
             stopId: busConfig.stopId,
+            stopKey: busConfig.stopKey,
             departures: departures.map(dep => ({
                 line: dep.line,
+                lineColor: dep.lineColor,
                 destination: dep.destination,
                 expectedArrivalISO: dep.expectedArrivalISO,
                 targetArrivalISO: dep.targetArrivalISO,
@@ -191,9 +227,9 @@ function getCachedDepartures() {
         const cacheData = JSON.parse(fm.readString(cachePath));
         const cacheAgeMinutes = (Date.now() - new Date(cacheData.timestamp).getTime()) / 60000;
         
-        // Reconstruct Date objects from ISO strings
         const reconstructedDepartures = cacheData.departures.map(dep => ({
             ...dep,
+            lineColor: dep.lineColor || busConfig.styling.primaryColor,
             expectedTime: parseApiTimestamp(dep.expectedArrivalISO),
             targetTime: parseApiTimestamp(dep.targetArrivalISO)
         }));
@@ -224,7 +260,6 @@ function createWidget(departures) {
     const cacheAge = departures.age;
     const displayData = departures.data || departures;
     
-    // Header - stop name left, time right
     const headerStack = widget.addStack();
     headerStack.layoutHorizontally();
     
@@ -241,7 +276,6 @@ function createWidget(departures) {
     
     widget.addSpacer(4);
     
-    // Error states
     if (displayData.length === 0) {
         const filterLines = busConfig.linesToShow;
         if (filterLines.length > 0) {
@@ -267,14 +301,13 @@ function createWidget(departures) {
         widget.addSpacer(4);
     }
     
-    // Departures - simple list
     for (const dep of displayData) {
         const rowStack = widget.addStack();
         rowStack.layoutHorizontally();
         
-        // Line number box (small yellow badge)
         const lineBox = rowStack.addStack();
-        lineBox.backgroundColor = new Color(busConfig.styling.primaryColor);
+        const boxColor = dep.lineColor || busConfig.styling.primaryColor;
+        lineBox.backgroundColor = new Color(boxColor);
         lineBox.cornerRadius = 3;
         lineBox.size = new Size(24, 20);
         lineBox.centerAlignContent();
@@ -285,14 +318,12 @@ function createWidget(departures) {
         
         rowStack.addSpacer(6);
         
-        // Destination
         const destText = rowStack.addText(dep.destination);
         destText.font = Font.systemFont(11);
         destText.textColor = new Color(busConfig.styling.textColor);
         
         rowStack.addSpacer();
         
-        // Time
         const eta = calculateETA(dep.expectedTime);
         
         const etaText = rowStack.addText(eta);
@@ -329,10 +360,6 @@ function truncateString(str, maxLength) {
     if (!str) return "";
     if (str.length <= maxLength) return str;
     return str.substring(0, maxLength - 3) + "...";
-}
-
-function padDestination(str, maxLen) {
-    return str ? str.padEnd(maxLen) : "";
 }
 
 function formatTime(date) {
